@@ -1,0 +1,6 @@
+{
+  "name": "M Shopping Hub",
+  "description": "A modern, premium, mobile-friendly marketplace featuring curated products with direct purchase links, role-based admin controls, and interactive user saves and reviews.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

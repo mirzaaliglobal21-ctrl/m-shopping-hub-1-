@@ -1,0 +1,29 @@
+[
+  {
+    "id": "comm-1",
+    "productId": "prod-1",
+    "userId": "user-sample-1",
+    "userName": "Sophia Martinez",
+    "userAvatar": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80",
+    "text": "The sky blue color matches perfectly with my setup! The noise cancelling is unbelievable.",
+    "createdAt": "2026-03-08T11:00:00Z"
+  },
+  {
+    "id": "comm-2",
+    "productId": "prod-1",
+    "userId": "user-sample-2",
+    "userName": "David Chen",
+    "userAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80",
+    "text": "Redirected straight to the official store and got free next-day shipping. Excellent curation!",
+    "createdAt": "2026-03-08T14:30:00Z"
+  },
+  {
+    "id": "comm-3",
+    "productId": "prod-2",
+    "userId": "user-sample-3",
+    "userName": "Elena Rostova",
+    "userAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80",
+    "text": "Premium leather quality! Looks even better in real life than in the picture.",
+    "createdAt": "2026-03-09T09:10:00Z"
+  }
+]
