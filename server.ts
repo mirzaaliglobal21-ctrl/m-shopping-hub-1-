@@ -2,8 +2,379 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI } from '@google/genai';
 import { INITIAL_PRODUCTS, INITIAL_COMMENTS } from './src/data/initialProducts';
 import { Product, CommentItem } from './src/types';
+
+// Lazy initialized Gemini Client (server-side only)
+let geminiClient: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  if (!geminiClient && process.env.GEMINI_API_KEY) {
+    try {
+      geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    } catch (e) {
+      console.warn('Failed to initialize GoogleGenAI client:', e);
+    }
+  }
+  return geminiClient;
+}
+
+// Decode HTML entities
+function decodeHtmlEntities(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .trim();
+}
+
+// Extract meta tag content by property or name
+function extractMetaContent(html: string, propertyName: string): string {
+  const regex1 = new RegExp(`<meta[^>]*(?:property|name)=["']${propertyName}["'][^>]*content=["']([^"']+)["']`, 'i');
+  const m1 = html.match(regex1);
+  if (m1 && m1[1]) return decodeHtmlEntities(m1[1]);
+
+  const regex2 = new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["']${propertyName}["']`, 'i');
+  const m2 = html.match(regex2);
+  if (m2 && m2[1]) return decodeHtmlEntities(m2[1]);
+
+  return '';
+}
+
+// Extract <title>
+function extractTitleTag(html: string): string {
+  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return m && m[1] ? decodeHtmlEntities(m[1]).replace(/\s+/g, ' ') : '';
+}
+
+// Parse JSON-LD blocks
+function extractJsonLdBlocks(html: string): any[] {
+  const items: any[] = [];
+  const scriptRegex = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+  while ((match = scriptRegex.exec(html)) !== null) {
+    try {
+      const raw = match[1].trim();
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        items.push(...parsed);
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed['@graph'])) {
+          items.push(...parsed['@graph']);
+        } else {
+          items.push(parsed);
+        }
+      }
+    } catch {
+      // ignore parsing errors
+    }
+  }
+  return items;
+}
+
+// Guess marketplace category from text
+function guessCategory(text: string): string {
+  const lower = text.toLowerCase();
+  if (/\b(bag|handbag|purse|tote|backpack|wallet|dress|shirt|jacket|clothing|apparel|sneakers|shoes|pants|hoodie|outfit|crossbody|clutch)\b/i.test(lower)) {
+    return 'Fashion & Bags';
+  }
+  if (/\b(watch|watches|jewelry|ring|necklace|bracelet|earrings|diamond|gold|silver|gemstone|pendant)\b/i.test(lower)) {
+    return 'Watches & Jewelry';
+  }
+  if (/\b(perfume|fragrance|cologne|scent|cream|serum|skincare|makeup|lipstick|lotion|beauty|cleanser|cosmetics|hair)\b/i.test(lower)) {
+    return 'Beauty & Fragrance';
+  }
+  if (/\b(home|decor|kitchen|furniture|bed|pillow|lamp|cookware|living|sofa|dining|vacuum|curtain|bottle|organizer)\b/i.test(lower)) {
+    return 'Home & Living';
+  }
+  return 'Tech & Audio';
+}
+
+// Core Product Extractor
+async function extractProductFromUrl(targetUrl: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
+
+  let html = '';
+  let finalUrl = targetUrl;
+
+  try {
+    const response = await fetch(targetUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+      },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    finalUrl = response.url || targetUrl;
+    const rawText = await response.text();
+    // Cap at first 600KB
+    html = rawText.slice(0, 600000);
+  } catch (err: any) {
+    clearTimeout(timeout);
+    console.warn(`Direct fetch failed for ${targetUrl}:`, err.message);
+    throw new Error(`Could not access this store link (${err.message}). Please verify the URL or enter details manually.`);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  // 1. Title Extraction
+  let title =
+    extractMetaContent(html, 'og:title') ||
+    extractMetaContent(html, 'twitter:title') ||
+    extractTitleTag(html);
+
+  // Clean common store title suffixes (e.g. " | Amazon.com", " - AliExpress", " | eBay")
+  if (title) {
+    title = title
+      .replace(/\s*\|\s*Amazon(?:\.com)?(?:\s*:\s*.*)?$/i, '')
+      .replace(/\s*-\s*AliExpress.*$/i, '')
+      .replace(/\s*\|\s*eBay$/i, '')
+      .replace(/\s*\|\s*Walmart.*$/i, '')
+      .replace(/\s*\|\s*Etsy$/i, '')
+      .replace(/\s*\|\s*Target$/i, '')
+      .replace(/\s*\|\s*Daraz.*$/i, '')
+      .trim();
+  }
+
+  // 2. Description Extraction
+  let description =
+    extractMetaContent(html, 'og:description') ||
+    extractMetaContent(html, 'description') ||
+    extractMetaContent(html, 'twitter:description');
+
+  // 3. Image URL Extraction
+  let imageUrl =
+    extractMetaContent(html, 'og:image:secure_url') ||
+    extractMetaContent(html, 'og:image') ||
+    extractMetaContent(html, 'twitter:image:src') ||
+    extractMetaContent(html, 'twitter:image');
+
+  // If no meta image, try finding largest product image link
+  if (!imageUrl) {
+    const imgMatch = html.match(/<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/i);
+    if (imgMatch && imgMatch[1]) {
+      imageUrl = imgMatch[1];
+    }
+  }
+
+  // Ensure absolute image URL
+  if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
+    try {
+      imageUrl = new URL(imageUrl, finalUrl).href;
+    } catch {
+      // keep as is
+    }
+  }
+
+  // 4. JSON-LD Schema Extraction (High accuracy for price and brand info)
+  const jsonLdItems = extractJsonLdBlocks(html);
+  let jsonLdPrice: number | undefined;
+  let jsonLdOriginalPrice: number | undefined;
+  let jsonLdCurrency = '$';
+
+  for (const item of jsonLdItems) {
+    const type = item['@type'];
+    const isProduct =
+      type === 'Product' ||
+      (Array.isArray(type) && type.includes('Product')) ||
+      (typeof type === 'string' && type.toLowerCase().includes('product'));
+
+    if (isProduct) {
+      if (!title && item.name) {
+        title = decodeHtmlEntities(item.name);
+      }
+      if (!description && item.description) {
+        description = decodeHtmlEntities(item.description);
+      }
+      if (!imageUrl && item.image) {
+        if (typeof item.image === 'string') {
+          imageUrl = item.image;
+        } else if (Array.isArray(item.image) && item.image[0]) {
+          imageUrl = typeof item.image[0] === 'string' ? item.image[0] : item.image[0].url;
+        } else if (item.image.url) {
+          imageUrl = item.image.url;
+        }
+      }
+
+      // Check Offers
+      const offers = item.offers;
+      if (offers) {
+        const offerList = Array.isArray(offers) ? offers : [offers];
+        for (const off of offerList) {
+          if (off.price !== undefined) {
+            const p = parseFloat(off.price);
+            if (!isNaN(p) && p > 0) {
+              jsonLdPrice = p;
+            }
+          } else if (off.lowPrice !== undefined) {
+            const lp = parseFloat(off.lowPrice);
+            if (!isNaN(lp) && lp > 0) {
+              jsonLdPrice = lp;
+            }
+          }
+          if (off.priceCurrency) {
+            jsonLdCurrency = off.priceCurrency;
+          }
+          if (off.highPrice !== undefined) {
+            const hp = parseFloat(off.highPrice);
+            if (!isNaN(hp) && hp > (jsonLdPrice || 0)) {
+              jsonLdOriginalPrice = hp;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 5. Fallback Price Extraction from Meta Tags and Heuristics
+  let extractedPrice: number = jsonLdPrice || 0;
+  let extractedOriginalPrice: number | undefined = jsonLdOriginalPrice;
+  let currency: string = jsonLdCurrency || '$';
+
+  if (!extractedPrice) {
+    const metaPriceStr =
+      extractMetaContent(html, 'product:price:amount') ||
+      extractMetaContent(html, 'og:price:amount');
+    if (metaPriceStr) {
+      const p = parseFloat(metaPriceStr.replace(/[^0-9.]/g, ''));
+      if (!isNaN(p) && p > 0) extractedPrice = p;
+    }
+  }
+
+  if (!extractedPrice) {
+    // Regex for common prices like "$19.99" or "Rs. 2,499"
+    const priceMatch = html.match(/(?:price|sale|usd|\$)\s*[:=]?\s*\$?\s*([0-9]+(?:[.,][0-9]{2})?)/i);
+    if (priceMatch && priceMatch[1]) {
+      const p = parseFloat(priceMatch[1].replace(',', '.'));
+      if (!isNaN(p) && p > 0 && p < 100000) {
+        extractedPrice = p;
+      }
+    }
+  }
+
+  // Standardize currency symbols
+  if (currency.toUpperCase() === 'USD') currency = '$';
+  else if (currency.toUpperCase() === 'PKR') currency = 'Rs';
+  else if (currency.toUpperCase() === 'EUR') currency = '€';
+  else if (currency.toUpperCase() === 'GBP') currency = '£';
+
+  // 6. Category Selection
+  let category = guessCategory(title + ' ' + description);
+
+  // 7. Optional Gemini Refinement for perfect polish
+  const ai = getGeminiClient();
+  if (ai && (title || description)) {
+    try {
+      const strippedText = html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .slice(0, 4000);
+
+      const prompt = `You are a product data extractor for a direct purchase marketplace.
+Extract and clean up the product information from this page metadata and text:
+- Target URL: ${finalUrl}
+- Extracted Title: ${title}
+- Extracted Description: ${description}
+- Extracted Price: ${extractedPrice}
+- Extracted Image URL: ${imageUrl}
+- Raw Page Excerpt: ${strippedText}
+
+Categories allowed (pick the best matching one exactly):
+- 'Tech & Audio'
+- 'Fashion & Bags'
+- 'Watches & Jewelry'
+- 'Beauty & Fragrance'
+- 'Home & Living'
+
+Instructions:
+1. Provide a clean, crisp, commercial "title" (not spammy).
+2. Provide a 2-3 sentence engaging "description" of key features.
+3. Determine the numeric "price" (if found, else default to ${extractedPrice || 0}).
+4. Determine "originalPrice" if there's a higher discount/strikethrough price, else null.
+5. Provide "currency" (e.g. "$", "Rs", "€", "£").
+6. Provide "category" (must be one of the 5 allowed categories above).
+7. Provide "imageUrl" (the highest quality product image URL found).
+
+Return strictly JSON with keys: title, description, price, originalPrice, currency, category, imageUrl`;
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini API timeout')), 6000)
+      );
+
+      const aiResponse: any = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+          },
+        }),
+        timeoutPromise,
+      ]);
+
+      if (aiResponse.text) {
+        const parsed = JSON.parse(aiResponse.text);
+        if (parsed.title) title = parsed.title;
+        if (parsed.description) description = parsed.description;
+        if (typeof parsed.price === 'number' && parsed.price > 0) extractedPrice = parsed.price;
+        if (typeof parsed.originalPrice === 'number' && parsed.originalPrice > extractedPrice) {
+          extractedOriginalPrice = parsed.originalPrice;
+        }
+        if (parsed.currency) currency = parsed.currency;
+        if (parsed.category) category = parsed.category;
+        if (parsed.imageUrl && parsed.imageUrl.startsWith('http')) imageUrl = parsed.imageUrl;
+      }
+    } catch (aiErr) {
+      console.warn('Gemini product refinement skipped:', aiErr);
+    }
+  }
+
+  // Fallback defaults if title was still empty
+  if (!title) {
+    try {
+      const urlObj = new URL(finalUrl);
+      const pathname = urlObj.pathname.split('/').filter(Boolean).pop() || '';
+      title = pathname
+        .replace(/[-_]/g, ' ')
+        .replace(/\.html?$/i, '')
+        .replace(/\b\w/g, (c) => c.toUpperCase()) || 'Curated Marketplace Product';
+    } catch {
+      title = 'Curated Marketplace Product';
+    }
+  }
+
+  if (!description) {
+    description = `Premium curated ${category} item with verified direct purchase store link.`;
+  }
+
+  if (!imageUrl) {
+    imageUrl = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80';
+  }
+
+  return {
+    title,
+    description,
+    price: extractedPrice || 19.99,
+    originalPrice: extractedOriginalPrice || (extractedPrice ? Math.round(extractedPrice * 1.25 * 100) / 100 : undefined),
+    currency,
+    category,
+    imageUrl,
+    directPurchaseUrl: targetUrl,
+  };
+}
 
 const PORT = 3000;
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -152,6 +523,44 @@ async function startServer() {
       res.json({ success: true, message: 'Admin authorized' });
     } else {
       res.status(401).json({ success: false, message: 'Invalid administrative passcode' });
+    }
+  });
+
+  // Admin Auto-Extract Product Details from Affiliate/Product link
+  // Protected: strictly for admin with passcode
+  app.post('/api/admin/extract-product', async (req, res) => {
+    const { url, passcode } = req.body;
+
+    if (passcode !== '420225') {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: Admin passcode verification required.',
+      });
+    }
+
+    if (!url || typeof url !== 'string' || !url.trim().startsWith('http')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid http or https link to a product or affiliate page.',
+      });
+    }
+
+    try {
+      console.log(`[Admin] Extracting product metadata from: ${url.trim()}`);
+      const product = await extractProductFromUrl(url.trim());
+      console.log(`[Admin] Successfully extracted product: "${product.title}" ($${product.price})`);
+
+      res.json({
+        success: true,
+        message: 'Product details successfully extracted',
+        product,
+      });
+    } catch (err: any) {
+      console.error('[Admin] Error extracting product details:', err.message);
+      res.status(500).json({
+        success: false,
+        message: err.message || 'Failed to auto-fetch details from this link. You can still input details manually.',
+      });
     }
   });
 

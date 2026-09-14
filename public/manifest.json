@@ -1,0 +1,21 @@
+{
+  "name": "M Shopping Hub",
+  "short_name": "M Shop Hub",
+  "description": "Curated direct purchase marketplace featuring verified authentic products with direct buy links.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

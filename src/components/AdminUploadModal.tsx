@@ -1,8 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Upload, Link2, DollarSign, Image as ImageIcon, CheckCircle, AlertTriangle } from 'lucide-react';
+import {
+  X,
+  Upload,
+  Link2,
+  DollarSign,
+  Image as ImageIcon,
+  CheckCircle,
+  AlertTriangle,
+  Sparkles,
+  Loader2,
+  Wand2,
+} from 'lucide-react';
 import { Product } from '../types';
 import { CATEGORIES } from '../data/initialProducts';
+import { extractProductFromLink } from '../api';
 
 interface AdminUploadModalProps {
   isOpen: boolean;
@@ -30,11 +42,17 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [originalPrice, setOriginalPrice] = useState('');
+  const [currency, setCurrency] = useState('$');
   const [category, setCategory] = useState('Tech & Audio');
   const [imageUrl, setImageUrl] = useState('');
   const [directPurchaseUrl, setDirectPurchaseUrl] = useState('');
   const [imagePreview, setImagePreview] = useState('');
   const [error, setError] = useState('');
+
+  // Magic Affiliate Auto-Extract state
+  const [affiliateLinkInput, setAffiliateLinkInput] = useState('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractSuccessMsg, setExtractSuccessMsg] = useState('');
 
   useEffect(() => {
     if (editingProduct) {
@@ -42,10 +60,12 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
       setDescription(editingProduct.description);
       setPrice(editingProduct.price.toString());
       setOriginalPrice(editingProduct.originalPrice ? editingProduct.originalPrice.toString() : '');
+      setCurrency(editingProduct.currency || '$');
       setCategory(editingProduct.category);
       setImageUrl(editingProduct.imageUrl);
       setImagePreview(editingProduct.imageUrl);
       setDirectPurchaseUrl(editingProduct.directPurchaseUrl);
+      setAffiliateLinkInput(editingProduct.directPurchaseUrl);
     } else {
       resetForm();
     }
@@ -56,11 +76,58 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
     setDescription('');
     setPrice('');
     setOriginalPrice('');
+    setCurrency('$');
     setCategory('Tech & Audio');
     setImageUrl('');
     setImagePreview('');
     setDirectPurchaseUrl('');
+    setAffiliateLinkInput('');
     setError('');
+    setExtractSuccessMsg('');
+    setIsExtracting(false);
+  };
+
+  // Magic Auto-Extract handler
+  const handleAutoExtract = async (linkToUse?: string) => {
+    const target = (linkToUse || affiliateLinkInput).trim();
+    if (!target) {
+      setError('Please paste a product or affiliate link first (e.g. AliExpress, Amazon, Daraz, etc.)');
+      return;
+    }
+    if (!target.startsWith('http://') && !target.startsWith('https://')) {
+      setError('Link must start with http:// or https://');
+      return;
+    }
+
+    setIsExtracting(true);
+    setError('');
+    setExtractSuccessMsg('');
+
+    try {
+      const data = await extractProductFromLink(target, '420225');
+
+      if (data.title) setTitle(data.title);
+      if (data.description) setDescription(data.description);
+      if (data.price !== undefined && data.price > 0) setPrice(data.price.toString());
+      if (data.originalPrice) setOriginalPrice(data.originalPrice.toString());
+      if (data.category && CATEGORIES.includes(data.category)) setCategory(data.category);
+      if (data.imageUrl) {
+        setImageUrl(data.imageUrl);
+        setImagePreview(data.imageUrl);
+      }
+      if (data.currency) setCurrency(data.currency);
+      setDirectPurchaseUrl(target);
+      setAffiliateLinkInput(target);
+
+      setExtractSuccessMsg(
+        `✨ Details extracted! Title, Price (${data.currency || '$'}${data.price}), Image & Category auto-populated below.`
+      );
+    } catch (err: any) {
+      console.error('Auto extract error:', err);
+      setError(err.message || 'Could not auto-fetch from this link. You can still fill the fields manually.');
+    } finally {
+      setIsExtracting(false);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,7 +175,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
       category,
       imageUrl: imageUrl.trim(),
       directPurchaseUrl: directPurchaseUrl.trim(),
-      currency: '$',
+      currency: currency || '$',
     });
 
     onClose();
@@ -160,6 +227,75 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
               </div>
             )}
 
+            {/* ⚡ Magic Auto-Fill from Affiliate / Product Link (ADMIN EXCLUSIVE) */}
+            <div className="mb-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-sky-500/10 to-indigo-500/10 border border-sky-200 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                      <span>Magic Auto-Fill from Link</span>
+                      <span className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full border border-amber-200">
+                        Admin Only
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-600">
+                      بس پروڈکٹ یا ایفلی ایٹ لنک ڈالیں — ٹائٹل، قیمت، تصویر، ڈسکرپشن سب خودکار آ جائے گا!
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 mt-3">
+                <div className="relative flex-1">
+                  <Link2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    id="admin-affiliate-autofill-input"
+                    type="url"
+                    value={affiliateLinkInput}
+                    onChange={(e) => setAffiliateLinkInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAutoExtract();
+                      }
+                    }}
+                    placeholder="Paste store/affiliate link (AliExpress, Amazon, Daraz, eBay, Shopify...)"
+                    className="w-full pl-10 pr-3 py-2.5 text-xs sm:text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium placeholder:text-slate-400"
+                  />
+                </div>
+
+                <button
+                  id="admin-auto-fetch-btn"
+                  type="button"
+                  disabled={isExtracting || !affiliateLinkInput.trim()}
+                  onClick={() => handleAutoExtract()}
+                  className="px-4 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                >
+                  {isExtracting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Fetching details...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="w-4 h-4 text-amber-300" />
+                      <span>Auto-Fetch Details</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {extractSuccessMsg && (
+                <div className="mt-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-medium">{extractSuccessMsg}</span>
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Product Title */}
               <div>
@@ -198,11 +334,14 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Price ($) *
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span>Price ({currency}) *</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Currency: {currency}</span>
                   </label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                      {currency}
+                    </span>
                     <input
                       id="admin-product-price-input"
                       type="number"
@@ -219,10 +358,12 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Original Price ($)
+                    Original Price ({currency})
                   </label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                      {currency}
+                    </span>
                     <input
                       id="admin-product-original-price-input"
                       type="number"
@@ -237,23 +378,42 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
                 </div>
               </div>
 
-              {/* Direct Purchase Link (Formerly affiliate link - all affiliate words removed) */}
+              {/* Direct Purchase Link */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                   <span>Direct Purchase Store Link *</span>
-                  <span className="text-[10px] text-sky-600 font-semibold normal-case">Target destination for "Buy Now"</span>
+                  <span className="text-[10px] text-sky-600 font-semibold normal-case">Affiliate or official store URL</span>
                 </label>
-                <div className="relative">
-                  <Link2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    id="admin-product-direct-link-input"
-                    type="url"
-                    value={directPurchaseUrl}
-                    onChange={(e) => setDirectPurchaseUrl(e.target.value)}
-                    placeholder="https://www.brandstore.com/product/item-link"
-                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all font-medium"
-                    required
-                  />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Link2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      id="admin-product-direct-link-input"
+                      type="url"
+                      value={directPurchaseUrl}
+                      onChange={(e) => {
+                        setDirectPurchaseUrl(e.target.value);
+                        if (!affiliateLinkInput) setAffiliateLinkInput(e.target.value);
+                      }}
+                      placeholder="https://www.brandstore.com/product/item-link"
+                      className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all font-medium"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    title="Auto-fetch all fields using this link"
+                    disabled={isExtracting || !directPurchaseUrl.trim().startsWith('http')}
+                    onClick={() => handleAutoExtract(directPurchaseUrl)}
+                    className="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
+                  >
+                    {isExtracting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    )}
+                    <span className="hidden sm:inline">Auto-Fetch</span>
+                  </button>
                 </div>
               </div>
 

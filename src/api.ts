@@ -319,3 +319,30 @@ export async function resetDefaultProductsApi(passcode: string): Promise<Product
 
   return INITIAL_PRODUCTS;
 }
+
+// 9. Admin Auto-Extract Product Details from Affiliate or Store URL
+export interface ExtractedProduct {
+  title: string;
+  description: string;
+  price: number;
+  originalPrice?: number;
+  currency: string;
+  category: string;
+  imageUrl: string;
+  directPurchaseUrl: string;
+}
+
+export async function extractProductFromLink(url: string, passcode = '420225'): Promise<ExtractedProduct> {
+  const res = await fetch(`${API_BASE}/admin/extract-product`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: url.trim(), passcode }),
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || 'Unable to extract product details from this link. You can enter details manually.');
+  }
+
+  return data.product;
+}
