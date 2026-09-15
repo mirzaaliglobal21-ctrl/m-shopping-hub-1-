@@ -1,5 +1,9 @@
 User-agent: *
 Allow: /
 
+User-agent: Googlebot-Image
+Allow: /
+
 # Sitemap
-Sitemap: https://best-m-shop-19.vercel.app/sitemap.xml
+Sitemap: https://m-shopping-hub-1-two.vercel.app/sitemap.xml
+

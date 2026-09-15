@@ -9,7 +9,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     originalPrice: 5.00,
     currency: '$',
     category: 'Fashion & Bags',
-    imageUrl: '/crossbody-bag.jpg',
+    imageUrl: 'https://ae-pic-a1.aliexpress-media.com/kf/S6ca6b1641be547419a79d808c309d3bcq.jpg',
     directPurchaseUrl: 'https://s.click.aliexpress.com/e/_c4L7vhpP',
     likesCount: 15,
     savesCount: 12,

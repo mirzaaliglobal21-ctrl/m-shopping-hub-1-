@@ -11,6 +11,8 @@ import {
   Sparkles,
   Loader2,
   Wand2,
+  Camera,
+  Trash2,
 } from 'lucide-react';
 import { Product } from '../types';
 import { CATEGORIES } from '../data/initialProducts';
@@ -51,6 +53,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
 
   // Magic Affiliate Auto-Extract state
   const [affiliateLinkInput, setAffiliateLinkInput] = useState('');
+  const [imageLinkInput, setImageLinkInput] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractSuccessMsg, setExtractSuccessMsg] = useState('');
 
@@ -82,21 +85,71 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
     setImagePreview('');
     setDirectPurchaseUrl('');
     setAffiliateLinkInput('');
+    setImageLinkInput('');
     setError('');
     setExtractSuccessMsg('');
     setIsExtracting(false);
   };
 
-  // Magic Auto-Extract handler
+  // Extract ONLY Picture from link (as requested: "link se bus picc mile")
+  const handleExtractPictureOnly = async (linkToUse?: string) => {
+    let target = (linkToUse || affiliateLinkInput || imageLinkInput).trim();
+    if (!target) {
+      setError('براہ کرم پروڈکٹ یا امیج لنک درج کریں (Please paste a link first)');
+      return;
+    }
+    if (!target.startsWith('http://') && !target.startsWith('https://')) {
+      target = `https://${target}`;
+    }
+
+    // If target itself is directly an image URL, set it immediately
+    if (/\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(target) || target.includes('images.unsplash.com')) {
+      setImageUrl(target);
+      setImagePreview(target);
+      if (!directPurchaseUrl) {
+        setDirectPurchaseUrl(target);
+      }
+      setExtractSuccessMsg('🖼️ تصویر کامیابی سے سیٹ ہو گئی! (Image set directly from URL)');
+      setError('');
+      return;
+    }
+
+    setIsExtracting(true);
+    setError('');
+    setExtractSuccessMsg('');
+
+    try {
+      const data = await extractProductFromLink(target, '420225');
+      if (data && data.imageUrl) {
+        setImageUrl(data.imageUrl);
+        setImagePreview(data.imageUrl);
+        // Also keep store direct link updated if empty
+        if (!directPurchaseUrl) {
+          setDirectPurchaseUrl(target);
+        }
+        setAffiliateLinkInput(target);
+        setExtractSuccessMsg('🖼️ تصویر لنک سے کامیابی سے حاصل کر لی گئی! (Picture fetched from link!)');
+      } else {
+        setError('اس لنک سے تصویر نہیں مل سکی۔ براہ کرم تصویر خود اپلوڈ کر لیں یا دوسرا لنک دیں۔');
+      }
+    } catch (err: any) {
+      console.error('Picture extract error:', err);
+      setError(err.message || 'تصویر حاصل نہیں ہو سکی۔ آپ خود بھی تصویر منتخب کر سکتے ہیں۔');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  // Magic Auto-Extract handler (All fields)
   const handleAutoExtract = async (linkToUse?: string) => {
-    const target = (linkToUse || affiliateLinkInput).trim();
+    let target = (linkToUse || affiliateLinkInput).trim();
     if (!target) {
       setError('Please paste a product or affiliate link first (e.g. AliExpress, Amazon, Daraz, etc.)');
       return;
     }
+    // Auto prefix https:// if user pasted www. or domain without protocol
     if (!target.startsWith('http://') && !target.startsWith('https://')) {
-      setError('Link must start with http:// or https://');
-      return;
+      target = `https://${target}`;
     }
 
     setIsExtracting(true);
@@ -236,20 +289,20 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <span>Magic Auto-Fill from Link</span>
-                      <span className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full border border-amber-200">
+                      <span>Magic Link Helper</span>
+                      <span className="text-[10px] px-2 py-0.5 bg-sky-100 text-sky-800 font-bold rounded-full border border-sky-200">
                         Admin Only
                       </span>
                     </h3>
                     <p className="text-xs text-slate-600">
-                      بس پروڈکٹ یا ایفلی ایٹ لنک ڈالیں — ٹائٹل، قیمت، تصویر، ڈسکرپشن سب خودکار آ جائے گا!
+                      پروڈکٹ کا لنک ڈالیں — صرف تصویر نکالیں یا تمام معلومات خودکار حاصل کریں۔
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2 mt-3">
-                <div className="relative flex-1">
+              <div className="flex flex-col gap-2 mt-3">
+                <div className="relative w-full">
                   <Link2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     id="admin-affiliate-autofill-input"
@@ -259,33 +312,50 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        handleAutoExtract();
+                        handleExtractPictureOnly();
                       }
                     }}
-                    placeholder="Paste store/affiliate link (AliExpress, Amazon, Daraz, eBay, Shopify...)"
+                    placeholder="Paste link here (AliExpress, Amazon, Daraz, eBay, Shopify...)"
                     className="w-full pl-10 pr-3 py-2.5 text-xs sm:text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium placeholder:text-slate-400"
                   />
                 </div>
 
-                <button
-                  id="admin-auto-fetch-btn"
-                  type="button"
-                  disabled={isExtracting || !affiliateLinkInput.trim()}
-                  onClick={() => handleAutoExtract()}
-                  className="px-4 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
-                >
-                  {isExtracting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Fetching details...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Wand2 className="w-4 h-4 text-amber-300" />
-                      <span>Auto-Fetch Details</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Primary Button: Get Picture Only as requested */}
+                  <button
+                    id="admin-fetch-picture-only-btn"
+                    type="button"
+                    disabled={isExtracting || !affiliateLinkInput.trim()}
+                    onClick={() => handleExtractPictureOnly()}
+                    className="flex-1 sm:flex-initial px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold rounded-xl shadow-md hover:shadow-lg shadow-sky-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                    title="لنک سے صرف پروڈکٹ کی تصویر حاصل کریں"
+                  >
+                    {isExtracting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>تصویر آ رہی ہے...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-4 h-4 text-amber-300" />
+                        <span>🖼️ لنک سے صرف تصویر لیں (Get Picture)</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Secondary Option: Auto-Fetch All Details */}
+                  <button
+                    id="admin-auto-fetch-all-btn"
+                    type="button"
+                    disabled={isExtracting || !affiliateLinkInput.trim()}
+                    onClick={() => handleAutoExtract()}
+                    className="px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                    title="پروڈکٹ ٹائٹل، قیمت، تصویر، ڈسکرپشن سب خودکار لائیں"
+                  >
+                    <Wand2 className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>سب تفصیلات لائیں (All Info)</span>
+                  </button>
+                </div>
               </div>
 
               {extractSuccessMsg && (
@@ -432,11 +502,74 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
                 />
               </div>
 
-              {/* Product Image Source (Upload, Preset, or URL) */}
+              {/* Product Image Source (Upload, Link Grabber, Preset, or URL) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Product Image *
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Product Image *
+                  </label>
+                  {imagePreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImageUrl('');
+                        setImagePreview('');
+                      }}
+                      className="text-[11px] text-rose-600 hover:text-rose-700 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Remove Picture</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Direct Link to Picture Grabber */}
+                <div className="mb-3 p-3 rounded-2xl bg-sky-50/80 border border-sky-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Link se sirf Picture lein:</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      AliExpress, Daraz, Amazon, etc.
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                      <input
+                        id="admin-image-only-link-input"
+                        type="url"
+                        value={imageLinkInput}
+                        onChange={(e) => setImageLinkInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (imageLinkInput.trim()) {
+                              handleExtractPictureOnly(imageLinkInput);
+                            }
+                          }
+                        }}
+                        placeholder="Paste link here to extract picture..."
+                        className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-sky-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium placeholder:text-slate-400"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isExtracting || !imageLinkInput.trim()}
+                      onClick={() => handleExtractPictureOnly(imageLinkInput)}
+                      className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      {isExtracting ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <ImageIcon className="w-3.5 h-3.5" />
+                      )}
+                      <span>Get Picture</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                   {/* File Upload Box */}
                   <div className="border-2 border-dashed border-sky-200 rounded-2xl p-4 text-center hover:bg-sky-50/50 transition-colors relative cursor-pointer">
@@ -462,20 +595,20 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({
                         setImageUrl(e.target.value);
                         setImagePreview(e.target.value);
                       }}
-                      placeholder="Or paste image URL here"
+                      placeholder="Or paste direct image URL here"
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl mb-2 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     />
                     {imagePreview ? (
-                      <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
+                      <div className="relative w-full h-28 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
                         <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                        <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">
-                          Preview
+                        <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded font-medium">
+                          Active Preview
                         </span>
                       </div>
                     ) : (
-                      <div className="w-full h-24 rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-400 text-xs">
+                      <div className="w-full h-28 rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-400 text-xs">
                         <ImageIcon className="w-5 h-5 mb-1 opacity-50" />
-                        <span>No image preview</span>
+                        <span>No image selected yet</span>
                       </div>
                     )}
                   </div>
