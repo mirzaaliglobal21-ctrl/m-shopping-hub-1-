@@ -1,5 +1,6 @@
 import { Product, CommentItem } from './types';
 import { INITIAL_PRODUCTS, INITIAL_COMMENTS } from './data/initialProducts';
+import { safeSetItem, safeGetItem } from './lib/storage';
 import {
   fetchProductsFromFirestore,
   saveProductToFirestore,
@@ -23,11 +24,7 @@ export async function getPublicProducts(): Promise<Product[]> {
   try {
     const firestoreProducts = await fetchProductsFromFirestore();
     if (firestoreProducts && firestoreProducts.length > 0) {
-      try {
-        localStorage.setItem('m_shopping_hub_products_v1', JSON.stringify(firestoreProducts));
-      } catch {
-        // ignore
-      }
+      safeSetItem('m_shopping_hub_products_v1', JSON.stringify(firestoreProducts));
       return firestoreProducts;
     }
   } catch (err) {
@@ -47,11 +44,7 @@ export async function getPublicProducts(): Promise<Product[]> {
         data.products.forEach((p: Product) => {
           saveProductToFirestore(p).catch(() => {});
         });
-        try {
-          localStorage.setItem('m_shopping_hub_products_v1', JSON.stringify(data.products));
-        } catch {
-          // ignore
-        }
+        safeSetItem('m_shopping_hub_products_v1', JSON.stringify(data.products));
         return data.products;
       }
     }
@@ -61,7 +54,7 @@ export async function getPublicProducts(): Promise<Product[]> {
 
   // Third attempt: Fallback to local cache or default catalog
   try {
-    const cached = localStorage.getItem('m_shopping_hub_products_v1');
+    const cached = safeGetItem('m_shopping_hub_products_v1');
     if (cached) {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -205,7 +198,7 @@ export async function toggleProductLikeOnServer(id: string, action: 'like' | 'un
 
   // Fallback for Vercel / serverless: update Firestore directly
   try {
-    const cached = localStorage.getItem('m_shopping_hub_products_v1');
+    const cached = safeGetItem('m_shopping_hub_products_v1');
     if (cached) {
       const parsed: Product[] = JSON.parse(cached);
       const target = parsed.find((p) => p.id === id);
@@ -227,11 +220,7 @@ export async function getPublicComments(): Promise<CommentItem[]> {
   try {
     const firestoreComments = await fetchCommentsFromFirestore();
     if (firestoreComments && firestoreComments.length > 0) {
-      try {
-        localStorage.setItem('m_shopping_hub_comments_v1', JSON.stringify(firestoreComments));
-      } catch {
-        // ignore
-      }
+      safeSetItem('m_shopping_hub_comments_v1', JSON.stringify(firestoreComments));
       return firestoreComments;
     }
   } catch (err) {
@@ -243,11 +232,7 @@ export async function getPublicComments(): Promise<CommentItem[]> {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.comments)) {
-        try {
-          localStorage.setItem('m_shopping_hub_comments_v1', JSON.stringify(data.comments));
-        } catch {
-          // ignore
-        }
+        safeSetItem('m_shopping_hub_comments_v1', JSON.stringify(data.comments));
         return data.comments;
       }
     }
@@ -256,7 +241,7 @@ export async function getPublicComments(): Promise<CommentItem[]> {
   }
 
   try {
-    const cached = localStorage.getItem('m_shopping_hub_comments_v1');
+    const cached = safeGetItem('m_shopping_hub_comments_v1');
     if (cached) return JSON.parse(cached);
   } catch {
     // ignore

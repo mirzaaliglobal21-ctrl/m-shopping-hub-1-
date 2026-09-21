@@ -13,6 +13,7 @@ import {
   Home,
   Menu,
   X,
+  Share2,
 } from 'lucide-react';
 import { AppUser } from '../types';
 
@@ -27,6 +28,7 @@ interface NavbarProps {
   onOpenAdminDashboard: () => void;
   onOpenSavedDrawer: () => void;
   onBackToWelcome: () => void;
+  onOpenShareWeb?: () => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
 }
@@ -42,6 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdminDashboard,
   onOpenSavedDrawer,
   onBackToWelcome,
+  onOpenShareWeb,
   searchQuery,
   onSearchChange,
 }) => {
@@ -125,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="nav-saved-items-btn"
             onClick={onOpenSavedDrawer}
-            className="relative p-2 sm:px-3 sm:py-2 text-slate-700 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-colors flex items-center gap-1.5"
+            className="relative p-2 sm:px-3 sm:py-2 text-slate-700 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
             title="View saved items"
           >
             <Bookmark className="w-5 h-5" />
@@ -136,6 +139,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             )}
           </button>
+
+          {/* Share Web Button */}
+          {onOpenShareWeb && (
+            <button
+              id="nav-share-hub-btn"
+              onClick={onOpenShareWeb}
+              className="p-2 sm:px-3 sm:py-2 text-slate-700 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Share M Shopping Hub"
+            >
+              <Share2 className="w-5 h-5 text-sky-600" />
+              <span className="hidden md:inline-block text-xs font-bold">Share Hub</span>
+            </button>
+          )}
 
           {/* Admin Exclusive: Visitor Analytics Dashboard */}
           {isAdmin && (
@@ -281,6 +297,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             )}
           </button>
+
+          {onOpenShareWeb && (
+            <button
+              onClick={() => {
+                onOpenShareWeb();
+                setIsMobileMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-xl"
+            >
+              <Share2 className="w-4 h-4 text-sky-600" />
+              <span>Share Website Link</span>
+            </button>
+          )}
 
           {isAdmin && (
             <>

@@ -22,7 +22,9 @@ import { AuthModal } from './components/AuthModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { AdminUploadModal } from './components/AdminUploadModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
+import { ShareModal } from './components/ShareModal';
 import { recordVisitorEvent } from './lib/visitorTracker';
+import { safeSetItem, safeGetItem, safeRemoveItem } from './lib/storage';
 import {
   SlidersHorizontal,
   Package,
@@ -44,8 +46,11 @@ export default function App() {
   // Persistence: Products
   const [products, setProducts] = useState<Product[]>(() => {
     try {
-      const saved = localStorage.getItem('m_shopping_hub_products_v1');
-      if (saved) return JSON.parse(saved);
+      const saved = safeGetItem('m_shopping_hub_products_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch {
       // Ignore error
     }
@@ -55,8 +60,11 @@ export default function App() {
   // Persistence: Comments
   const [comments, setComments] = useState<CommentItem[]>(() => {
     try {
-      const saved = localStorage.getItem('m_shopping_hub_comments_v1');
-      if (saved) return JSON.parse(saved);
+      const saved = safeGetItem('m_shopping_hub_comments_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
     } catch {
       // Ignore error
     }
@@ -66,8 +74,11 @@ export default function App() {
   // Persistence: User Likes (array of product IDs)
   const [likedProductIds, setLikedProductIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('m_shopping_hub_likes_v1');
-      if (saved) return JSON.parse(saved);
+      const saved = safeGetItem('m_shopping_hub_likes_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
     } catch {
       // Ignore error
     }
@@ -77,8 +88,11 @@ export default function App() {
   // Persistence: User Saves / Bookmarks (array of product IDs)
   const [savedProductIds, setSavedProductIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('m_shopping_hub_saves_v1');
-      if (saved) return JSON.parse(saved);
+      const saved = safeGetItem('m_shopping_hub_saves_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
     } catch {
       // Ignore error
     }
@@ -88,7 +102,7 @@ export default function App() {
   // Current User (Regular logged-in user)
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
     try {
-      const saved = localStorage.getItem('m_shopping_hub_user_v1');
+      const saved = safeGetItem('m_shopping_hub_user_v1');
       if (saved) return JSON.parse(saved);
     } catch {
       // Ignore error
@@ -99,7 +113,7 @@ export default function App() {
   // Admin Mode Gate (Password '420225' strictly limits role)
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('m_shopping_hub_admin_v1');
+      const saved = safeGetItem('m_shopping_hub_admin_v1');
       if (saved) return JSON.parse(saved) === true;
     } catch {
       // Ignore error
@@ -122,6 +136,30 @@ export default function App() {
   const [isSavedDrawerOpen, setIsSavedDrawerOpen] = useState(false);
   const [activeCommentProduct, setActiveCommentProduct] = useState<Product | null>(null);
   const [activeDetailProduct, setActiveDetailProduct] = useState<Product | null>(null);
+  const [sharingProduct, setSharingProduct] = useState<Product | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  const handleOpenShare = useCallback((product?: Product | null) => {
+    setSharingProduct(product || null);
+    setIsShareModalOpen(true);
+  }, []);
+
+  // Check URL parameters for direct product share links (?product=ID or #product-ID)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlProductId = params.get('product') || (window.location.hash.startsWith('#product-') ? window.location.hash.replace('#product-', '') : null);
+      if (urlProductId && Array.isArray(products) && products.length > 0) {
+        const found = products.find((p) => p && p.id === urlProductId);
+        if (found) {
+          setCurrentPage('marketplace');
+          setActiveDetailProduct(found);
+        }
+      }
+    } catch (e) {
+      console.warn('URL deep link handler warning:', e);
+    }
+  }, [products]);
 
   // Automatically record visitor session on load
   useEffect(() => {
@@ -194,33 +232,57 @@ export default function App() {
     }
   }, [toastMessage]);
 
-  // Sync state to localStorage
+  // Sync state to localStorage with quota protection
   useEffect(() => {
-    localStorage.setItem('m_shopping_hub_products_v1', JSON.stringify(products));
+    try {
+      safeSetItem('m_shopping_hub_products_v1', JSON.stringify(products));
+    } catch (e) {
+      console.warn('Failed to cache products locally:', e);
+    }
   }, [products]);
 
   useEffect(() => {
-    localStorage.setItem('m_shopping_hub_comments_v1', JSON.stringify(comments));
+    try {
+      safeSetItem('m_shopping_hub_comments_v1', JSON.stringify(comments));
+    } catch (e) {
+      console.warn('Failed to cache comments locally:', e);
+    }
   }, [comments]);
 
   useEffect(() => {
-    localStorage.setItem('m_shopping_hub_likes_v1', JSON.stringify(likedProductIds));
+    try {
+      safeSetItem('m_shopping_hub_likes_v1', JSON.stringify(likedProductIds));
+    } catch (e) {
+      console.warn('Failed to cache likes locally:', e);
+    }
   }, [likedProductIds]);
 
   useEffect(() => {
-    localStorage.setItem('m_shopping_hub_saves_v1', JSON.stringify(savedProductIds));
+    try {
+      safeSetItem('m_shopping_hub_saves_v1', JSON.stringify(savedProductIds));
+    } catch (e) {
+      console.warn('Failed to cache saves locally:', e);
+    }
   }, [savedProductIds]);
 
   useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('m_shopping_hub_user_v1', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('m_shopping_hub_user_v1');
+    try {
+      if (currentUser) {
+        safeSetItem('m_shopping_hub_user_v1', JSON.stringify(currentUser));
+      } else {
+        safeRemoveItem('m_shopping_hub_user_v1');
+      }
+    } catch (e) {
+      console.warn('Failed to cache user locally:', e);
     }
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('m_shopping_hub_admin_v1', JSON.stringify(isAdmin));
+    try {
+      safeSetItem('m_shopping_hub_admin_v1', JSON.stringify(isAdmin));
+    } catch (e) {
+      console.warn('Failed to cache admin state locally:', e);
+    }
   }, [isAdmin]);
 
   // Auth Protection Helper
@@ -394,27 +456,39 @@ export default function App() {
 
   // Filtered & Sorted Products
   const filteredProducts = useMemo(() => {
+    if (!Array.isArray(products)) return [];
     return products
       .filter((p) => {
+        if (!p) return false;
+        const category = (p.category || '').toLowerCase();
+        const title = (p.title || '').toLowerCase();
+        const description = (p.description || '').toLowerCase();
+        const search = searchQuery.trim().toLowerCase();
+
         const matchesCategory =
-          selectedCategory === 'All Products' || p.category.toLowerCase() === selectedCategory.toLowerCase();
+          selectedCategory === 'All Products' || category === selectedCategory.toLowerCase();
         const matchesSearch =
-          !searchQuery.trim() ||
-          p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.category.toLowerCase().includes(searchQuery.toLowerCase());
+          !search ||
+          title.includes(search) ||
+          description.includes(search) ||
+          category.includes(search);
         return matchesCategory && matchesSearch;
       })
       .sort((a, b) => {
-        if (sortBy === 'price-low') return a.price - b.price;
-        if (sortBy === 'price-high') return b.price - a.price;
-        if (sortBy === 'likes') return b.likesCount - a.likesCount;
-        return (b.featured ? 1 : 0) - (a.featured ? 1 : 0);
+        const aPrice = a?.price ?? 0;
+        const bPrice = b?.price ?? 0;
+        const aLikes = a?.likesCount ?? 0;
+        const bLikes = b?.likesCount ?? 0;
+        if (sortBy === 'price-low') return aPrice - bPrice;
+        if (sortBy === 'price-high') return bPrice - aPrice;
+        if (sortBy === 'likes') return bLikes - aLikes;
+        return ((b?.featured ? 1 : 0) - (a?.featured ? 1 : 0));
       });
   }, [products, selectedCategory, searchQuery, sortBy]);
 
   const savedProducts = useMemo(() => {
-    return products.filter((p) => savedProductIds.includes(p.id));
+    if (!Array.isArray(products)) return [];
+    return products.filter((p) => p && savedProductIds.includes(p.id));
   }, [products, savedProductIds]);
 
   return (
@@ -450,6 +524,7 @@ export default function App() {
             onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
             onOpenSavedDrawer={() => setIsSavedDrawerOpen(true)}
             onBackToWelcome={() => setCurrentPage('welcome')}
+            onOpenShareWeb={() => handleOpenShare(null)}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
           />
@@ -577,6 +652,7 @@ export default function App() {
                     onToggleSave={handleToggleSave}
                     onOpenComments={handleOpenComments}
                     onProductClick={setActiveDetailProduct}
+                    onShareProduct={handleOpenShare}
                     isAdmin={isAdmin}
                     onEditProduct={(p) => {
                       setEditingProduct(p);
@@ -677,6 +753,7 @@ export default function App() {
         onToggleLike={handleToggleLike}
         onToggleSave={handleToggleSave}
         onOpenComments={handleOpenComments}
+        onShareProduct={handleOpenShare}
       />
 
       {/* 3. User Google Auth Modal */}
@@ -733,6 +810,13 @@ export default function App() {
         onClose={() => setIsSavedDrawerOpen(false)}
         savedProducts={savedProducts}
         onRemoveSave={(id) => setSavedProductIds((prev) => prev.filter((pId) => pId !== id))}
+      />
+
+      {/* 7. Social Share Modal (Products & Website Links) */}
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        product={sharingProduct}
       />
 
       {/* Floating Public Deployment Sync Toast */}

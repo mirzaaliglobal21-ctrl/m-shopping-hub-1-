@@ -14,16 +14,17 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { VisitorLog, AnalyticsSummary, AppUser } from '../types';
+import { safeGetItem, safeSetItem } from './storage';
 
 const VISITOR_STORAGE_KEY = 'm_shopping_hub_visitor_uuid';
 const VISIT_RECORDED_SESSION_KEY = 'm_visit_session_recorded';
 
 export function getVisitorId(): string {
   try {
-    let id = localStorage.getItem(VISITOR_STORAGE_KEY);
+    let id = safeGetItem(VISITOR_STORAGE_KEY);
     if (!id) {
       id = 'v-' + Math.random().toString(36).substring(2, 9) + '-' + Date.now().toString(36);
-      localStorage.setItem(VISITOR_STORAGE_KEY, id);
+      safeSetItem(VISITOR_STORAGE_KEY, id);
     }
     return id;
   } catch {

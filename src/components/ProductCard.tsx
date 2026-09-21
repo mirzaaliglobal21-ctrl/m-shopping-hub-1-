@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Heart, Bookmark, MessageCircle, ExternalLink, Trash2, Edit3, ShieldAlert } from 'lucide-react';
+import { Heart, Bookmark, MessageCircle, ExternalLink, Trash2, Edit3, ShieldAlert, Share2 } from 'lucide-react';
 import { Product } from '../types';
 import { trackStoreClick } from '../lib/visitorTracker';
 
@@ -15,6 +15,7 @@ interface ProductCardProps {
   isAdmin: boolean;
   onEditProduct?: (product: Product) => void;
   onDeleteProduct?: (productId: string) => void;
+  onShareProduct?: (product: Product) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -28,10 +29,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   isAdmin,
   onEditProduct,
   onDeleteProduct,
+  onShareProduct,
 }) => {
   const handleBuyNow = (e: React.MouseEvent) => {
     e.stopPropagation();
-    trackStoreClick(product.id, product.title);
+    trackStoreClick(product.id, product.title || 'Product');
     if (product.directPurchaseUrl) {
       window.open(product.directPurchaseUrl, '_blank', 'noopener,noreferrer');
     }
@@ -41,6 +43,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     product.originalPrice && product.originalPrice > product.price
       ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
       : 0;
+
+  const categoryLabel = (product.category || 'Curated').split(' ')[0];
 
   return (
     <motion.div
@@ -54,8 +58,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Product Image & Top Badges */}
       <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
         <img
-          src={product.imageUrl}
-          alt={product.title}
+          src={product.imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80'}
+          alt={product.title || 'Product'}
           loading="lazy"
           onError={(e) => {
             e.currentTarget.src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80';
@@ -69,7 +73,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {/* Category & Discount Tag */}
         <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
           <span className="px-2 py-0.5 text-[10px] sm:text-xs font-semibold bg-white/90 text-slate-800 backdrop-blur-md rounded-full shadow-xs border border-slate-100">
-            {product.category.split(' ')[0]}
+            {categoryLabel}
           </span>
           {discountPercent > 0 && (
             <span className="px-2 py-0.5 text-[10px] sm:text-xs font-bold bg-rose-500 text-white rounded-full shadow-xs">
@@ -78,23 +82,38 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           )}
         </div>
 
-        {/* Top Right: Save / Wishlist Button */}
-        <button
-          id={`save-btn-${product.id}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleSave(product.id);
-          }}
-          className={`absolute top-2 right-2 p-1.5 sm:p-2 rounded-full backdrop-blur-md transition-all z-10 ${
-            isSaved
-              ? 'bg-sky-500 text-white shadow-md shadow-sky-500/30'
-              : 'bg-white/85 text-slate-600 hover:text-sky-600 hover:bg-white shadow-xs'
-          }`}
-          title={isSaved ? 'Saved to collection' : 'Save product'}
-          aria-label="Save product"
-        >
-          <Bookmark className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isSaved ? 'fill-current' : ''}`} />
-        </button>
+        {/* Top Right: Share & Save / Wishlist Buttons */}
+        <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
+          <button
+            id={`share-btn-${product.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onShareProduct?.(product);
+            }}
+            className="p-1.5 sm:p-2 rounded-full backdrop-blur-md transition-all bg-white/90 text-slate-600 hover:text-sky-600 hover:bg-white shadow-xs cursor-pointer"
+            title="Share this product"
+            aria-label="Share product"
+          >
+            <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </button>
+
+          <button
+            id={`save-btn-${product.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSave(product.id);
+            }}
+            className={`p-1.5 sm:p-2 rounded-full backdrop-blur-md transition-all cursor-pointer ${
+              isSaved
+                ? 'bg-sky-500 text-white shadow-md shadow-sky-500/30'
+                : 'bg-white/85 text-slate-600 hover:text-sky-600 hover:bg-white shadow-xs'
+            }`}
+            title={isSaved ? 'Saved to collection' : 'Save product'}
+            aria-label="Save product"
+          >
+            <Bookmark className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isSaved ? 'fill-current' : ''}`} />
+          </button>
+        </div>
 
         {/* Admin Quick Control overlay if user is admin */}
         {isAdmin && (
@@ -134,30 +153,30 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       <div className="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
         <div>
           <h3 className="font-bold text-slate-900 text-xs sm:text-sm md:text-base line-clamp-1 leading-snug group-hover:text-sky-600 transition-colors">
-            {product.title}
+            {product.title || 'Untitled Product'}
           </h3>
           <p className="text-[11px] sm:text-xs text-slate-500 line-clamp-2 mt-1 leading-relaxed">
-            {product.description}
+            {product.description || ''}
           </p>
         </div>
 
         {/* Price & Discount info */}
         <div className="mt-2 sm:mt-3 flex items-baseline gap-1.5 sm:gap-2">
           <span className="text-sm sm:text-base md:text-lg font-black text-slate-900 font-['Outfit',sans-serif]">
-            {product.currency}
-            {product.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {product.currency || '$'}
+            {(product.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           {product.originalPrice && product.originalPrice > product.price && (
             <span className="text-[10px] sm:text-xs text-slate-400 line-through font-medium">
-              {product.currency}
+              {product.currency || '$'}
               {product.originalPrice.toFixed(2)}
             </span>
           )}
         </div>
 
-        {/* User Interaction Controls: Like, Comment, and Buy Now */}
+        {/* User Interaction Controls: Like, Comment, Share and Buy Now */}
         <div className="mt-2.5 sm:mt-3 pt-2 sm:pt-2.5 border-t border-slate-100 flex flex-col gap-2">
-          {/* Social Stats Row: Like & Comment */}
+          {/* Social Stats Row: Like, Comment & Share */}
           <div className="flex items-center justify-between text-xs text-slate-500">
             {/* Like button */}
             <button
@@ -166,7 +185,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 e.stopPropagation();
                 onToggleLike(product.id);
               }}
-              className={`flex items-center gap-1 sm:gap-1.5 transition-colors p-1 rounded-lg ${
+              className={`flex items-center gap-1 sm:gap-1.5 transition-colors p-1 rounded-lg cursor-pointer ${
                 isLiked
                   ? 'text-rose-600 font-semibold'
                   : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'
@@ -179,7 +198,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 }`}
               />
               <span className="text-[11px] sm:text-xs">
-                {product.likesCount + (isLiked ? 1 : 0)}
+                {(product.likesCount || 0) + (isLiked ? 1 : 0)}
               </span>
             </button>
 
@@ -190,15 +209,29 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 e.stopPropagation();
                 onOpenComments(product);
               }}
-              className="flex items-center gap-1 sm:gap-1.5 text-slate-500 hover:text-sky-600 hover:bg-sky-50 p-1 rounded-lg transition-colors"
+              className="flex items-center gap-1 sm:gap-1.5 text-slate-500 hover:text-sky-600 hover:bg-sky-50 p-1 rounded-lg transition-colors cursor-pointer"
               title="Read & post comments"
             >
               <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="text-[11px] sm:text-xs">{product.commentsCount}</span>
+              <span className="text-[11px] sm:text-xs">{product.commentsCount || 0}</span>
+            </button>
+
+            {/* Quick Share button in social row */}
+            <button
+              id={`share-row-btn-${product.id}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onShareProduct?.(product);
+              }}
+              className="flex items-center gap-1 sm:gap-1.5 text-slate-500 hover:text-sky-600 hover:bg-sky-50 p-1 rounded-lg transition-colors cursor-pointer"
+              title="Share product link"
+            >
+              <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-[11px] sm:text-xs">Share</span>
             </button>
           </div>
 
-          {/* "Buy Now" Button - strictly redirects to assigned direct purchase link */}
+          {/* "Buy Now" Button */}
           <button
             id={`buy-now-btn-${product.id}`}
             onClick={handleBuyNow}
@@ -212,3 +245,4 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     </motion.div>
   );
 };
+
